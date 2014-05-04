@@ -39,3 +39,8 @@ main = do
     _ <- printf "0 xor 1 = %.4f\n" (calcXor net 0 1)
     printf "1 xor 1 = %.4f" (calcXor net 1 1)
 ```
+
+For more details see:
+
+* http://hackage.haskell.org/package/simple-neural-networks
+* http://eax.me/haskell-neural-networks/
