@@ -1,0 +1,54 @@
+name:                simple-neural-networks
+version:             0.2.0.0
+synopsis:            Simple parallel neural networks implementation
+description:         Simple parallel neural networks implementation
+homepage:            http://eax.me/haskell-neural-networks/
+license:             BSD3
+license-file:        LICENSE
+author:              Alexander Alexeev
+maintainer:          mail@eax.me
+-- copyright:           
+category:            AI
+build-type:          Simple
+-- extra-source-files:  
+cabal-version:       >=1.10
+
+source-repository head
+    type:     git
+    location: https://github.com/afiskon/simple-neural-networks
+
+library
+  exposed-modules:     AI.NeuralNetworks.Simple
+  ghc-options:         -O2 -Wall -fno-warn-missing-signatures
+  build-depends:       base >=4.5 && < 4.8,
+                       random >= 1.0 && < 1.1,
+                       split >= 0.2 && < 0.3,
+                       containers >= 0.5 && < 0.6,
+                       deepseq >= 1.3 && < 1.4,
+                       parallel >= 3.2 && < 3.3
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+
+executable nn-xor-logistic-example
+  ghc-options:         -O2 -Wall -fno-warn-missing-signatures -threaded -rtsopts
+  main-is:             MainXorLogistic.hs
+  build-depends:       base >= 4.5 && < 4.8,
+                       random >= 1.0 && < 1.1,
+                       split >= 0.2 && < 0.3,
+                       containers >= 0.5 && < 0.6,
+                       deepseq >= 1.3 && < 1.4,
+                       parallel >= 3.2 && < 3.3
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+
+executable nn-xor-tanh-example
+  ghc-options:         -O2 -Wall -fno-warn-missing-signatures -threaded -rtsopts
+  main-is:             MainXorTanh.hs
+  build-depends:       base >= 4.5 && < 4.8,
+                       random >= 1.0 && < 1.1,
+                       split >= 0.2 && < 0.3,
+                       containers >= 0.5 && < 0.6,
+                       deepseq >= 1.3 && < 1.4,
+                       parallel >= 3.2 && < 3.3
+  hs-source-dirs:      src
+  default-language:    Haskell2010
