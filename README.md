@@ -29,9 +29,9 @@ stopf best gnum = do
 
 main = do
     gen <- newStdGen
-    let (randomNet, _) = randomNeuralNetwork gen [2,2,1] [Logistic, Logistic] 0.45
+    let (rnet, _) = randomNeuralNetwork gen [2,2,1] [Logistic, Logistic] 0.45
         ex = [ ([0,0],[0]), ([0,1],[1]), ([1,0],[1]), ([1,1],[0]) ]
-    net <- backpropagationBatchParallel randomNet ex 0.4 stopf :: IO (NeuralNetwork Double)
+    net <- backpropagationBatchParallel rnet ex 0.4 stopf :: IO (NeuralNetwork Double)
     putStrLn ""
     putStrLn $ "Result: " ++ show net
     _ <- printf "0 xor 0 = %.4f\n" (calcXor net 0 0)
