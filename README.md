@@ -3,7 +3,7 @@ simple-neural-networks
 
 Simple parallel neural networks implementation in pure Haskell
 
-```
+```Haskell
 import AI.NeuralNetworks.Simple
 import Text.Printf
 import System.Random
