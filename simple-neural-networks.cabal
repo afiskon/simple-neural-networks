@@ -1,5 +1,5 @@
 name:                simple-neural-networks
-version:             0.2.0.0
+version:             0.2.0.1
 synopsis:            Simple parallel neural networks implementation
 description:         Simple parallel neural networks implementation
 homepage:            http://eax.me/haskell-neural-networks/

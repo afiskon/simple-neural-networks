@@ -111,41 +111,41 @@ instance NFData a => NFData (WeightDeltas a) where
 emptyNeuralNetwork :: [Word16]                -- ^ Number of neurons in each layer
                    -> [ ActivationFunction ]  -- ^ Activation functions
                    -> NeuralNetwork a         -- ^ New neural network
-emptyNeuralNetwork sx ax =
-    NeuralNetwork sx ax M.empty
+emptyNeuralNetwork ss as =
+    NeuralNetwork ss as M.empty
 
 -- | Weights of the given neural network.
 getWeights :: NeuralNetwork a                 -- ^ Neural network
            -> [((Word16, Word16, Word16), a)] -- ^ Weights (layer 0.., neuron 1.., input 0..)
-getWeights (NeuralNetwork _ _ wx) =
-    map (first decodeKey) $ M.toList wx
+getWeights (NeuralNetwork _ _ ws) =
+    map (first decodeKey) $ M.toList ws
 
 -- | Change weights of the given neural network.
 setWeights :: [((Word16, Word16, Word16), a)] -- ^ Weights
            -> NeuralNetwork a                 -- ^ Neural network
            -> NeuralNetwork a                 -- ^ Neural network with changed weights
-setWeights lst (NeuralNetwork sx ax _) =
-    let wx = M.fromList $ map (\((k1, k2, k3), v) -> (makeKey k1 k2 k3, v)) lst
-    in  NeuralNetwork sx ax wx
+setWeights lst (NeuralNetwork ss as _) =
+    let ws = M.fromList $ map (\((k1, k2, k3), v) -> (makeKey k1 k2 k3, v)) lst
+    in  NeuralNetwork ss as ws
 
 -- | Run neural network.
 runNeuralNetwork :: (Num a, Floating a) 
                  => NeuralNetwork a          -- ^ Neural network
                  -> [a]                      -- ^ Input signal
                  -> [a]                      -- ^ Output signal
-runNeuralNetwork (NeuralNetwork sx ax m) input =
-    let (result, _, _) = runNeuralNetwork' (head sx) (tail sx) ax 0 m [] [] input
+runNeuralNetwork (NeuralNetwork ss as m) input =
+    let (result, _, _) = runNeuralNetwork' (head ss) (tail ss) as 0 m [] [] input
     in result
 
 runNeuralNetwork' _ [] _ _ _ ilfacc outacc xs = (xs, ilfacc, outacc)
 runNeuralNetwork' _ _ [] _ _ _ _ _ = -- actually should never happen
     error "runNeuralNetwork' - invalid number of activation functions"
-runNeuralNetwork' prevs (so:sx) (af:ax) layer ws ilfacc outacc xs =
+runNeuralNetwork' prevs (so:ss) (af:as) layer ws ilfacc outacc xs =
     let ilfs = [ ( (layer, n), inducedLocalField n layer ws xs) | n <- [1..so] ]
         ilfacc' = ilfs ++ ilfacc
         outs = [ ( (layer, n), x ) | (x, n) <- zip xs [1..prevs] ]
         outacc' = outs ++ outacc
-    in runNeuralNetwork' so sx ax (layer+1) ws ilfacc' outacc' (map (\(_, v) -> applyAF af v) ilfs)
+    in runNeuralNetwork' so ss as (layer+1) ws ilfacc' outacc' (map (\(_, v) -> applyAF af v) ilfs)
 
 inducedLocalField neuron layer ws xs =
     let weight k = getWeight (makeKey layer neuron k) ws
@@ -158,20 +158,20 @@ backpropagationOneStep :: (Num a, Floating a)
                        -> [a]               -- ^ Input
                        -> [a]               -- ^ Expected output
                        -> WeightDeltas a    -- ^ Calculated deltas
-backpropagationOneStep (NeuralNetwork sx ax wx) learningRate input expout =
-    let (result, inducedLocalFields, outputs) = runNeuralNetwork' (head sx) (tail sx) ax 0 wx [] [] input
+backpropagationOneStep (NeuralNetwork ss as ws) learningRate input expout =
+    let (result, inducedLocalFields, outputs) = runNeuralNetwork' (head ss) (tail ss) as 0 ws [] [] input
         errors = [ d - o | (d, o) <- zip expout result ]
         inducedLocalFieldsMap = M.fromList inducedLocalFields
         outputsMap = M.fromList outputs
-        deltasMap = calculateDeltas sx ax wx errors inducedLocalFieldsMap
-        wdx = M.mapWithKey 
+        deltasMap = calculateDeltas ss as ws errors inducedLocalFieldsMap
+        wds = M.mapWithKey 
                 (\k _ ->
                     let (ln, n, i) = decodeKey k
                         out = if i == 0 then 1
                                         else fromJust $ M.lookup (ln, i) outputsMap
                     in learningRate * out * fromJust (M.lookup (ln, n) deltasMap)
-                ) wx
-    in WeightDeltas wdx
+                ) ws
+    in WeightDeltas wds
 
 -- | Run backpropagation algorithm in stochastic mode.
 backpropagationStochastic :: (Num a, Floating a)
@@ -187,8 +187,8 @@ backpropagationStochastic net0 set0 learningRate stopf = do
         len = length set0
         run rg net set gnum = do
             let (rg', set') = shuffleList rg len set
-                net' = foldl' (\n (i, o) -> let wdx = backpropagationOneStep n learningRate i o
-                                            in applyWeightDeltas wdx n) net set'
+                net' = foldl' (\n (i, o) -> let wds = backpropagationOneStep n learningRate i o
+                                            in applyWeightDeltas wds n) net set'
             stop <- stopf net' gnum
             if stop then return net'
                     else run rg' net' set' (gnum+1)
@@ -205,10 +205,10 @@ backpropagationBatchParallel net0 set learningRate stopf =
     where
         chunks = chunksOf ( ceiling $ fromIntegral (length set) / (fromIntegral numCapabilities :: Double) ) set
         run net gnum = do
-            let wdx = map (unionWeightDeltas . map (uncurry $ backpropagationOneStep net learningRate)) chunks
+            let wds = map (unionWeightDeltas . map (uncurry $ backpropagationOneStep net learningRate)) chunks
                         `using` parList rdeepseq
-                totalWdx = unionWeightDeltas wdx
-                net' = applyWeightDeltas totalWdx net
+                totalWds = unionWeightDeltas wds
+                net' = applyWeightDeltas totalWds net
             stop <- stopf net' gnum
             if stop then return net'
                     else run net' (gnum+1)
@@ -218,9 +218,9 @@ applyWeightDeltas :: (Num a, Floating a)
                   => WeightDeltas a     -- ^ Deltas
                   -> NeuralNetwork a    -- ^ Neural network
                   -> NeuralNetwork a    -- ^ Neural network with updated weights
-applyWeightDeltas (WeightDeltas dwx) (NeuralNetwork sx ax wx) =
-    let wx' = M.mapWithKey (\k w -> w + fromJust (M.lookup k dwx)) wx
-    in NeuralNetwork sx ax wx'
+applyWeightDeltas (WeightDeltas dws) (NeuralNetwork ss as ws) =
+    let ws' = M.mapWithKey (\k w -> w + fromJust (M.lookup k dws)) ws
+    in NeuralNetwork ss as ws'
 
 -- | Union list of deltas into one WeightDeltas.
 unionWeightDeltas :: (Num a, Floating a)
@@ -232,21 +232,21 @@ unionWeightDeltas (WeightDeltas hd : tl) =
     let tm = foldl' (\acc (WeightDeltas m) -> M.mapWithKey (\k w -> w + fromJust (M.lookup k m)) acc) hd tl
     in WeightDeltas tm
 
-calculateDeltas sx ax wx errors ilfm =
-    let (s:sx') = reverse sx
-        (a:ax') = reverse ax
-        cl = fromIntegral $ length sx - 2
+calculateDeltas ss as ws errors ilfm =
+    let (s:ss') = reverse ss
+        (a:as') = reverse as
+        cl = fromIntegral $ length ss - 2
         acc = M.fromList [ ((cl, n), err * applyAFDerivative a (fromJust $ M.lookup (cl, n) ilfm )) | (err, n) <- zip errors [1..s] ]
-    in calculateDeltas' (cl - 1) s sx' ax' wx ilfm acc
+    in calculateDeltas' (cl - 1) s ss' as' ws ilfm acc
 
 calculateDeltas' _ _ _ [] _ _ acc = acc
-calculateDeltas' cl sprev sx ax wx ilfm acc = 
-    let (s:sx') = sx
-        (a:ax') = ax
-        err n = sum [ fromJust $ (*) <$> M.lookup (cl+1, k) acc <*> M.lookup (makeKey (cl+1) k n) wx | k <- [1..sprev] ]
+calculateDeltas' cl sprev ss as ws ilfm acc = 
+    let (s:ss') = ss
+        (a:as') = as
+        err n = sum [ fromJust $ (*) <$> M.lookup (cl+1, k) acc <*> M.lookup (makeKey (cl+1) k n) ws | k <- [1..sprev] ]
         newDeltas = [ ((cl, n), err n * applyAFDerivative a (fromJust $ M.lookup (cl, n) ilfm)) | n <- [1..s] ] 
         acc' = foldl' (\m (k, v) -> M.insert k v m) acc newDeltas
-    in calculateDeltas' (cl - 1) s sx' ax' wx ilfm acc'
+    in calculateDeltas' (cl - 1) s ss' as' ws ilfm acc'
 
 -- | Generate random neural network.
 randomNeuralNetwork :: (RandomGen g, Random a, Num a, Ord a)
@@ -255,14 +255,14 @@ randomNeuralNetwork :: (RandomGen g, Random a, Num a, Ord a)
                     -> [ ActivationFunction ]   -- ^ Activation functions
                     -> a                        -- ^ Maximum weight; all weights in NN will be between -maxw and maxw
                     -> (NeuralNetwork a, g)     -- ^ Random neural network and new RandomGen
-randomNeuralNetwork gen sx ax maxw 
-    | length sx /= length ax + 1 = error "Number of layers and activation functions mismatch"
-    | maxw < 0 = randomNeuralNetwork gen sx ax (-maxw)
+randomNeuralNetwork gen ss as maxw 
+    | length ss /= length as + 1 = error "Number of layers and activation functions mismatch"
+    | maxw < 0 = randomNeuralNetwork gen ss as (-maxw)
     | otherwise =
-        let keys = generateKeys sx
+        let keys = generateKeys ss
             (weights, gen') = generateWeights gen maxw
             ws = M.fromList $ zip keys weights
-        in  (NeuralNetwork sx ax ws, gen')
+        in  (NeuralNetwork ss as ws, gen')
 
 makeKey :: Word16 -> Word16 -> Word16 -> Word64
 makeKey layer n i =
@@ -278,8 +278,8 @@ decodeKey k =
         t3 = fromIntegral $ k .&. 0xFFFF
     in (t1, t2, t3)
 
-generateKeys sx =
-    [ makeKey layer n i | (layer, inputs, neurons) <- zip3 [0..] (init sx) (tail sx), n <- [1 .. neurons], i <- [0 .. inputs ] ]
+generateKeys ss =
+    [ makeKey layer n i | (layer, inputs, neurons) <- zip3 [0..] (init ss) (tail ss), n <- [1 .. neurons], i <- [0 .. inputs ] ]
 
 generateWeights gen maxw =
     let (gen1, gen2) = split gen
@@ -291,14 +291,14 @@ crossoverCommon :: (Num a, RandomGen g)
                 -> NeuralNetwork a          -- ^ First neural network
                 -> NeuralNetwork a          -- ^ Second neural network
                 -> ([NeuralNetwork a],g)    -- ^ Children and new RandomGen
-crossoverCommon g0 (NeuralNetwork sx1 ax1 wx1) (NeuralNetwork _ _ wx2) =
-    let keys = generateKeys sx1
-        (idx, g1) = randomR (1, length keys - 1) g0
-        (keys1, keys2) = splitAt idx keys
-        tmpMap wx lst = M.fromList [ (k, getWeight k wx) | k <- lst ]
-        wx1' = tmpMap wx1 keys1 `M.union` tmpMap wx2 keys2
-        wx2' = tmpMap wx1 keys2 `M.union` tmpMap wx2 keys1
-    in ( [ NeuralNetwork sx1 ax1 wx1', NeuralNetwork sx1 ax1 wx2' ], g1)
+crossoverCommon g0 (NeuralNetwork ss1 as1 ws1) (NeuralNetwork _ _ ws2) =
+    let keys = generateKeys ss1
+        (ids, g1) = randomR (1, length keys - 1) g0
+        (keys1, keys2) = splitAt ids keys
+        tmpMap ws lst = M.fromList [ (k, getWeight k ws) | k <- lst ]
+        ws1' = tmpMap ws1 keys1 `M.union` tmpMap ws2 keys2
+        ws2' = tmpMap ws1 keys2 `M.union` tmpMap ws2 keys1
+    in ( [ NeuralNetwork ss1 as1 ws1', NeuralNetwork ss1 as1 ws2' ], g1)
 
 -- | Another implementation of crossover. Weights of a child are just some function of corresponding parent weights.
 crossoverMerge :: (Num a, RandomGen g)
@@ -307,9 +307,9 @@ crossoverMerge :: (Num a, RandomGen g)
                -> NeuralNetwork a       -- ^ First neural network
                -> NeuralNetwork a       -- ^ Second neural netwrok
                -> ([NeuralNetwork a],g) -- ^ Children (actually - exactly one child) and exact copy of the 2nd argument
-crossoverMerge avgf gen (NeuralNetwork sx1 ax1 wx1) (NeuralNetwork _ _ wx2) =
-    let wx' = M.fromList [ (k, getWeight k wx1 `avgf` getWeight k wx2) | k <- generateKeys sx1]
-    in  ( [ NeuralNetwork sx1 ax1 wx' ], gen )
+crossoverMerge avgf gen (NeuralNetwork ss1 as1 ws1) (NeuralNetwork _ _ ws2) =
+    let ws' = M.fromList [ (k, getWeight k ws1 `avgf` getWeight k ws2) | k <- generateKeys ss1]
+    in  ( [ NeuralNetwork ss1 as1 ws' ], gen )
 
 -- | Mutate given neural netwrok.
 mutationCommon :: (Random a, Num a, RandomGen g)
@@ -318,21 +318,21 @@ mutationCommon :: (Random a, Num a, RandomGen g)
                -> g                     -- ^ RandomGen
                -> NeuralNetwork a       -- ^ Neural network
                -> (NeuralNetwork a, g)  -- ^ New neural network and RandomGen
-mutationCommon percent maxw gen (NeuralNetwork sx ax wx) =
-    let layers = length sx - 1
-        mutnum = truncate $ percent * fromIntegral (M.size wx) :: Int
-        (wx', gen') = mutationCommon' mutnum (abs maxw) gen wx (init sx) (tail sx) layers
-    in (NeuralNetwork sx ax wx', gen')
+mutationCommon percent maxw gen (NeuralNetwork ss as ws) =
+    let layers = length ss - 1
+        mutnum = truncate $ percent * fromIntegral (M.size ws) :: Int
+        (ws', gen') = mutationCommon' mutnum (abs maxw) gen ws (init ss) (tail ss) layers
+    in (NeuralNetwork ss as ws', gen')
 
-mutationCommon' mutnum maxw g0 wx inputs outputs layers
-    | mutnum <= 0 = (wx, g0)
+mutationCommon' mutnum maxw g0 ws inputs outputs layers
+    | mutnum <= 0 = (ws, g0)
     | otherwise =
         let (layer, g1) = randomR (0, layers - 1) g0
             (neuron, g2) = randomR (1, outputs !! layer) g1
             (weightIdx, g3) = randomR (0, inputs !! layer) g2
             (newWeight, g4) = randomR (- maxw, maxw) g3
-            wx' = M.insert (makeKey (fromIntegral layer) neuron weightIdx) newWeight wx
-        in mutationCommon' (mutnum - 1) maxw g4 wx' inputs outputs layers
+            ws' = M.insert (makeKey (fromIntegral layer) neuron weightIdx) newWeight ws
+        in mutationCommon' (mutnum - 1) maxw g4 ws' inputs outputs layers
 
 getWeight :: (Num a, Ord k) => k -> M.Map k a -> a
 getWeight = M.findWithDefault 0
