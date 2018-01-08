@@ -42,5 +42,5 @@ main = do
 
 For more details see:
 
-* http://hackage.haskell.org/package/simple-neural-networks
-* http://eax.me/haskell-neural-networks/
+* https://hackage.haskell.org/package/simple-neural-networks
+* https://eax.me/haskell-neural-networks/
